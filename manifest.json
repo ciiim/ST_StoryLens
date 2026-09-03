@@ -1,0 +1,16 @@
+{
+  "display_name": "剧情镜头",
+  "loading_order": 120,
+  "requires": [],
+  "optional": [],
+  "dependencies": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Codex",
+  "version": "0.1.0",
+  "auto_update": true,
+  "minimum_client_version": "1.12.12",
+  "hooks": {
+    "activate": "onActivate"
+  }
+}

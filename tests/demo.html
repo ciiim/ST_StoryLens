@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>剧情镜头 · UI Demo</title>
+    <link rel="stylesheet" href="../style.css">
+    <style>
+        html, body { min-height: 100%; margin: 0; background: #0a0c0d; color: #cfc8bc; font-family: "Microsoft YaHei", sans-serif; }
+        .demo-shell { display: grid; grid-template-columns: 76px 1fr; min-height: 100vh; }
+        .demo-nav { border-right: 1px solid #252828; background: #080a0a; }
+        .demo-chat { padding: 70px max(6vw, 36px); }
+        .demo-chat h2 { color: #e2d5c4; font-family: serif; }
+        .demo-message { max-width: 720px; margin: 28px 0; padding: 18px 0; color: #aaa59d; border-bottom: 1px solid #252828; line-height: 1.8; }
+        #extensions_settings2 { display: none; }
+    </style>
+</head>
+<body>
+    <div class="demo-shell"><aside class="demo-nav"></aside><main class="demo-chat"><h2>陆沉舟</h2><div class="demo-message">雨还在下，街灯忽明忽暗，水洼里倒映着霓虹。他靠在墙边，警觉地望向巷口。</div><div class="demo-message">“只说三分钟。三分钟后你就离开。”</div></main></div>
+    <div id="extensions_settings2"></div>
+    <script type="module" src="./mock.js"></script>
+</body>
+</html>

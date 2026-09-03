@@ -1,0 +1,14 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Local browser QA artifacts
+tests/chrome-profile*/
+tests/*-render.png
+
+# Logs and local editor files
+*.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
