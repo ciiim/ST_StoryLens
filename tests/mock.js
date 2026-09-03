@@ -1,3 +1,12 @@
+window.__storyLensQaErrors = [];
+window.addEventListener('error', event => window.__storyLensQaErrors.push(event.message));
+window.addEventListener('unhandledrejection', event => window.__storyLensQaErrors.push(String(event.reason)));
+const originalConsoleError = console.error.bind(console);
+console.error = (...args) => {
+    window.__storyLensQaErrors.push(args.map(String).join(' '));
+    originalConsoleError(...args);
+};
+
 const seed = {
     version: 1,
     key: 'character:demo.png',
@@ -30,7 +39,7 @@ const context = {
     saveMetadataDebounced() {},
     getWorldInfoNames: () => ['现代都市设定', '组织与人物'],
     loadWorldInfo: async () => ({ entries: {} }),
-    generateRaw: async ({ jsonSchema }) => {
+    generateRaw: async ({ jsonSchema, prompt }) => {
         if (jsonSchema?.name === 'StoryLensAssetLibrary') {
             const sceneCount = jsonSchema.value.properties.scenes.minItems;
             const stateCount = jsonSchema.value.properties.characterStates.minItems;
@@ -39,8 +48,24 @@ const context = {
                 characterStates: Array.from({ length: stateCount }, (_, index) => ({ name: `测试动态 ${index + 1}`, description: '用于自动化验收的角色动态。', prompt: '完整角色提示词。', tags: ['测试'], category: index ? '表情' : '默认' })),
             });
         }
-        if (jsonSchema?.name === 'StoryLensSinglePrompt') return JSON.stringify({ name: '重写条目', description: '重写成功。', prompt: '重写后的完整提示词。', tags: ['重写'], category: '日常' });
-        if (jsonSchema?.name === 'StoryLensRuntimeMatch') return JSON.stringify({ sceneId: 'scene-1', characterStateId: 'state-2', confidence: .91, reason: '测试匹配。' });
+        if (jsonSchema?.name === 'StoryLensSinglePrompt') {
+            if (!prompt.includes('更偏向冷色雨夜氛围，动作更警觉。')) throw new Error('重写倾向没有传入模型');
+            return JSON.stringify({ name: '重写条目', description: '重写成功。', prompt: '重写后的完整提示词。', tags: ['重写'], category: '日常' });
+        }
+        if (jsonSchema?.name === 'StoryLensRuntimeMatch') return JSON.stringify({
+            sceneId: null,
+            characterStateId: null,
+            confidence: .94,
+            reason: '最新回复出现了素材库中没有的新场景和动作。',
+            newSceneNeeded: true,
+            newScene: { name: '雨后天台', description: '暴雨刚停后的城市天台。', category: '非日常', tags: ['天台', '雨后'] },
+            newCharacterStateNeeded: true,
+            newCharacterState: { name: '持伞戒备', description: '角色持伞观察四周的戒备姿态。', category: '动作', tags: ['持伞', '戒备'] },
+        });
+        if (jsonSchema?.name === 'StoryLensMissingItem') {
+            if (prompt.includes('剧情场景')) return JSON.stringify({ name: '雨后天台', description: '暴雨刚停后的城市天台。', prompt: '雨后城市天台，积水倒映冷色天光，广角电影构图，无人物。', tags: ['天台', '雨后'], category: '非日常' });
+            return JSON.stringify({ name: '持伞戒备', description: '角色持伞观察四周的戒备姿态。', prompt: '黑发灰眸青年持黑伞侧身戒备，湿润风衣，半身立绘。', tags: ['持伞', '戒备'], category: '动作' });
+        }
         return '{}';
     },
     eventTypes: { CHARACTER_MESSAGE_RENDERED: 'character', CHAT_CHANGED: 'chat' },
@@ -74,14 +99,49 @@ if (query.has('smoke')) {
         click('[data-action="generate"]');
         await new Promise(resolve => setTimeout(resolve, 300));
         click('[data-type="state"]');
+        click('[data-action="rewrite"]');
+        const direction = document.querySelector('#sl-rewrite-direction');
+        direction.value = '更偏向冷色雨夜氛围，动作更警觉。';
+        click('[data-action="rewrite-confirm"]');
+        await new Promise(resolve => setTimeout(resolve, 220));
+        const rewriteApplied = document.querySelector('#sl-item-prompt')?.value === '重写后的完整提示词。';
         click('[data-action="add"]');
         const prompt = document.querySelector('#sl-item-prompt');
         prompt.value = '用户编辑后的提示词';
         prompt.dispatchEvent(new Event('input', { bubbles: true }));
+        const beforeAnalyze = structuredClone(memory.get('library:character:demo.png'));
         click('[data-action="realtime"]');
         await new Promise(resolve => setTimeout(resolve, 100));
-        const passed = !document.querySelector('#story-lens-workspace') && document.querySelector('#story-lens-runtime');
+        click('[data-runtime="analyze"]');
+        await new Promise(resolve => setTimeout(resolve, 450));
+        const afterAnalyze = memory.get('library:character:demo.png');
+        const additionsSaved = afterAnalyze.scenes.length === beforeAnalyze.scenes.length + 1
+            && afterAnalyze.characterStates.length === beforeAnalyze.characterStates.length + 1
+            && afterAnalyze.scenes.some(item => item.name === '雨后天台' && item.prompt.includes('雨后城市天台'))
+            && afterAnalyze.characterStates.some(item => item.name === '持伞戒备' && item.prompt.includes('持黑伞'));
+        const railText = document.querySelector('#story-lens-runtime')?.textContent ?? '';
+        const additionsSelected = railText.includes('雨后天台') && railText.includes('持伞戒备');
+        const countsAfterFirstAnalysis = { scenes: afterAnalyze.scenes.length, states: afterAnalyze.characterStates.length };
+        click('[data-runtime="analyze"]');
+        await new Promise(resolve => setTimeout(resolve, 450));
+        const afterRepeatedAnalysis = memory.get('library:character:demo.png');
+        const duplicatePrevented = afterRepeatedAnalysis.scenes.length === countsAfterFirstAnalysis.scenes
+            && afterRepeatedAnalysis.characterStates.length === countsAfterFirstAnalysis.states;
+        const passed = rewriteApplied && additionsSaved && additionsSelected && duplicatePrevented && !window.__storyLensQaErrors.length && !document.querySelector('#story-lens-workspace') && document.querySelector('#story-lens-runtime');
+        document.documentElement.dataset.smokeDetail = JSON.stringify({ rewriteApplied, additionsSaved, additionsSelected, duplicatePrevented, errors: window.__storyLensQaErrors });
         document.documentElement.dataset.smoke = passed ? 'pass' : 'fail';
+    }, 120);
+} else if (query.has('rewrite')) {
+    setTimeout(async () => {
+        document.querySelector('#sl-open-workspace')?.click();
+        await new Promise(resolve => setTimeout(resolve, 80));
+        document.querySelector('[data-action="rewrite"]')?.click();
+    }, 120);
+} else if (query.has('display')) {
+    setTimeout(async () => {
+        document.querySelector('#sl-open-workspace')?.click();
+        await new Promise(resolve => setTimeout(resolve, 80));
+        document.querySelector('[data-tab="display"]')?.click();
     }, 120);
 } else if (!query.has('rail')) {
     setTimeout(() => document.querySelector('#sl-open-workspace')?.click(), 120);

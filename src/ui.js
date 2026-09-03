@@ -1,7 +1,7 @@
 import { settings, saveSettings } from './settings.js';
 import { getAvailableWorldBooks, getCurrentCharacter, getDefaultWorldBooks } from './context.js';
 import { countUploaded, fileToDataUrl, loadLibrary, saveLibrary } from './storage.js';
-import { generateAssetLibrary, regenerateItemPrompt, setSessionApiKey } from './generation.js';
+import { generateAssetLibrary, rewriteItemPrompt, setSessionApiKey } from './generation.js';
 
 let library;
 let selectedType = 'scene';
@@ -10,6 +10,8 @@ let activeTab = 'assets';
 let workspaceBusy = false;
 let runtimeBusy = false;
 let manualAnalyze = async () => {};
+let rewriteOpen = false;
+let rewriteDirection = '';
 
 const icon = (name) => {
     const paths = {
@@ -129,7 +131,7 @@ function renderInspector() {
         <main class="sl-inspector">
             <div class="sl-inspector-head">
                 <div><small>${typeLabel}详情</small><input id="sl-item-name" value="${escapeHtml(item.name)}" aria-label="素材名称"></div>
-                <div class="sl-head-actions"><span class="sl-unsaved" hidden>未保存的更改</span><button data-action="regenerate" ${workspaceBusy ? 'disabled' : ''}>${icon('refresh')} 重新生成</button><button class="danger" data-action="delete">${icon('trash')} 删除</button></div>
+                <div class="sl-head-actions"><span class="sl-unsaved" hidden>未保存的更改</span><button data-action="rewrite" ${workspaceBusy ? 'disabled' : ''}>${icon('refresh')} 重写</button><button class="danger" data-action="delete">${icon('trash')} 删除</button></div>
             </div>
             <div class="sl-inspector-grid">
                 <label class="sl-upload-zone" data-action="upload">
@@ -185,9 +187,25 @@ function renderApiTab() {
 function renderDisplayTab() {
     return `<div class="sl-settings-page"><section><h2>实时显示</h2><p>角色回复渲染完成后，插件会在后台匹配最贴合的场景与角色动态。</p>
         <label class="sl-toggle"><span><strong>每轮自动分析</strong><small>关闭后仍可从侧栏手动重新分析</small></span><input id="sl-auto-analyze" type="checkbox" ${settings.autoAnalyze ? 'checked' : ''}></label>
+        <label class="sl-toggle"><span><strong>自动补充缺失素材</strong><small>最新回复明显无法用现有素材表达时，生成并加入一个新场景或角色动态</small></span><input id="sl-auto-expand" type="checkbox" ${settings.autoExpandLibrary ? 'checked' : ''}></label>
         <label class="sl-toggle"><span><strong>显示剧情侧栏</strong><small>窄屏设备自动变为底部抽屉</small></span><input id="sl-display-rail" type="checkbox" ${settings.showRuntimeRail ? 'checked' : ''}></label>
         <div class="sl-note"><strong>未上传素材的处理</strong><p>允许模型正常选择该槽位，侧栏会明确显示“此槽位尚未上传图片”，不会悄悄换成语义不符的其他图片。</p></div>
     </section></div>`;
+}
+
+function renderRewriteDialog() {
+    const item = selectedItem();
+    if (!rewriteOpen || !item) return '';
+    return `<div class="sl-rewrite-backdrop">
+        <section class="sl-rewrite-dialog" role="dialog" aria-modal="true" aria-labelledby="sl-rewrite-title">
+            <header><div><small>${selectedType === 'scene' ? '场景' : '角色动态'} · ${escapeHtml(item.name)}</small><h2 id="sl-rewrite-title">定向重写当前栏位</h2></div><button data-action="rewrite-cancel" aria-label="关闭" ${workspaceBusy ? 'disabled' : ''}>${icon('close')}</button></header>
+            <p>写下希望强化、弱化或改变的方向。角色和世界观中的核心事实仍会保留，已上传图片不会被删除。</p>
+            <label for="sl-rewrite-direction">重写倾向</label>
+            <textarea id="sl-rewrite-direction" rows="7" placeholder="例如：把场景改成暴雨刚停后的清晨，减少霓虹元素，突出潮湿石板路与冷色自然光；镜头更开阔，不要出现人物。" ${workspaceBusy ? 'disabled' : ''}>${escapeHtml(rewriteDirection)}</textarea>
+            <small class="sl-rewrite-hint">留空则执行一般性的提示词优化。</small>
+            <footer><button class="sl-secondary" data-action="rewrite-cancel" ${workspaceBusy ? 'disabled' : ''}>取消</button><button class="sl-primary" data-action="rewrite-confirm" ${workspaceBusy ? 'disabled' : ''}>${workspaceBusy ? '<span class="sl-spinner"></span> 正在重写' : `${icon('refresh')} 开始重写`}</button></footer>
+        </section>
+    </div>`;
 }
 
 function renderWorkspace() {
@@ -198,8 +216,9 @@ function renderWorkspace() {
             <nav><button class="${activeTab === 'assets' ? 'active' : ''}" data-tab="assets">素材库</button><button class="${activeTab === 'api' ? 'active' : ''}" data-tab="api">API与分析</button><button class="${activeTab === 'display' ? 'active' : ''}" data-tab="display">显示设置</button></nav>
             <button class="sl-close" data-action="close" aria-label="关闭">${icon('close')}</button></header>
         <div class="sl-modal-content">${activeTab === 'assets' ? renderAssetsTab() : activeTab === 'api' ? renderApiTab() : renderDisplayTab()}</div>
-    </div>`;
+    </div>${renderRewriteDialog()}`;
     bindWorkspaceControls(root);
+    if (rewriteOpen && !workspaceBusy) requestAnimationFrame(() => root.querySelector('#sl-rewrite-direction')?.focus());
 }
 
 async function openWorkspace() {
@@ -264,6 +283,7 @@ function bindWorkspaceControls(root) {
     root.querySelector('#sl-custom-model')?.addEventListener('change', event => saveSettings({ customModel: event.target.value.trim() }));
     root.querySelector('#sl-custom-key')?.addEventListener('input', event => setSessionApiKey(event.target.value));
     root.querySelector('#sl-auto-analyze')?.addEventListener('change', event => saveSettings({ enabled: event.target.checked, autoAnalyze: event.target.checked }));
+    root.querySelector('#sl-auto-expand')?.addEventListener('change', event => saveSettings({ autoExpandLibrary: event.target.checked }));
     root.querySelector('#sl-display-rail')?.addEventListener('change', event => { saveSettings({ showRuntimeRail: event.target.checked }); refreshRuntime(); });
 
     ['sl-item-name', 'sl-item-prompt', 'sl-item-description', 'sl-item-category', 'sl-item-tags'].forEach(id => root.querySelector(`#${id}`)?.addEventListener('input', updateSelectedFromFields));
@@ -302,12 +322,26 @@ function bindWorkspaceControls(root) {
             } catch (error) { toast('error', error.message); }
             finally { workspaceBusy = false; renderWorkspace(); await refreshRuntime(); }
         }
-        if (action === 'regenerate') {
+        if (action === 'rewrite') {
+            rewriteDirection = '';
+            rewriteOpen = true;
+            renderWorkspace();
+        }
+        if (action === 'rewrite-cancel') {
+            rewriteOpen = false;
+            rewriteDirection = '';
+            renderWorkspace();
+        }
+        if (action === 'rewrite-confirm') {
+            rewriteDirection = root.querySelector('#sl-rewrite-direction')?.value ?? '';
             workspaceBusy = true; renderWorkspace();
             try {
                 const item = selectedItem();
-                Object.assign(item, await regenerateItemPrompt(item, selectedType, settings.selectedWorldBooks));
-                await saveLibrary(library); toast('success', '提示词已重新生成');
+                Object.assign(item, await rewriteItemPrompt(item, selectedType, settings.selectedWorldBooks, rewriteDirection));
+                await saveLibrary(library);
+                rewriteOpen = false;
+                rewriteDirection = '';
+                toast('success', '当前栏位已按倾向重写');
             } catch (error) { toast('error', error.message); }
             finally { workspaceBusy = false; renderWorkspace(); }
         }

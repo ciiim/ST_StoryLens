@@ -134,6 +134,19 @@
 .sl-note { max-width: 650px; margin-top: 28px; padding: 18px; background: #101313; border: 1px solid var(--sl-border-soft); border-radius: var(--sl-radius); }
 .sl-note p { margin: 6px 0 0; color: var(--sl-muted); }
 
+.sl-rewrite-backdrop { position: fixed; inset: 0; z-index: 12; display: grid; place-items: center; box-sizing: border-box; padding: 20px; background: rgba(3, 4, 4, .82); }
+.sl-rewrite-dialog { width: min(620px, 100%); max-width: 100%; min-width: 0; box-sizing: border-box; overflow: hidden; background: var(--sl-surface); border: 1px solid #4b4d4b; border-radius: var(--sl-radius); box-shadow: 0 22px 65px rgba(0,0,0,.62); }
+.sl-rewrite-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px 16px; border-bottom: 1px solid var(--sl-border-soft); }
+.sl-rewrite-dialog > header small { color: var(--sl-accent); }
+.sl-rewrite-dialog h2 { margin: 4px 0 0; color: var(--sl-text); font: 600 23px/1.25 "Noto Serif SC", "Songti SC", serif; }
+.sl-rewrite-dialog > header button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; background: transparent; color: var(--sl-muted); cursor: pointer; }
+.sl-rewrite-dialog > p { margin: 18px 22px 16px; color: var(--sl-muted); }
+.sl-rewrite-dialog > label { display: block; margin: 0 22px 7px; color: var(--sl-text); font-weight: 600; }
+.sl-rewrite-dialog > textarea { display: block; width: calc(100% - 44px); min-height: 150px; box-sizing: border-box; margin: 0 22px; padding: 12px 14px; resize: vertical; background: #0a0c0d; color: var(--sl-text); border: 1px solid var(--sl-border); border-radius: 5px; font: 14px/1.7 Inter, "Microsoft YaHei", sans-serif; }
+.sl-rewrite-dialog > textarea:focus { outline: 1px solid var(--sl-accent); border-color: var(--sl-accent); }
+.sl-rewrite-hint { display: block; margin: 7px 22px 0; color: #777a76; }
+.sl-rewrite-dialog > footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; padding: 14px 22px; border-top: 1px solid var(--sl-border-soft); background: #0d1010; }
+
 .story-lens-runtime { position: fixed; z-index: 19000; top: 68px; right: 10px; width: 350px; max-width: calc(100vw - 20px); max-height: calc(100vh - 82px); box-sizing: border-box; overflow: hidden auto; color: var(--sl-text); background: #0b0d0e; border: 1px solid var(--sl-border); border-radius: var(--sl-radius); box-shadow: 0 14px 45px rgba(0,0,0,.45); font: 12px/1.4 Inter, "Noto Sans SC", "Microsoft YaHei", sans-serif; }
 .story-lens-runtime > header { position: sticky; z-index: 2; top: 0; min-height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 13px; background: #0a0c0d; border-bottom: 1px solid var(--sl-border-soft); }
 .story-lens-runtime header strong { font: 600 18px/1 "Noto Serif SC", "Songti SC", serif; }
@@ -202,6 +215,14 @@
     .story-lens-runtime.collapsed { width: auto; left: auto; }
     .sl-api-choice { grid-template-columns: 1fr; }
     .sl-settings-page { padding: 22px 16px; }
+    .sl-rewrite-backdrop { padding: 10px; }
+    .sl-rewrite-dialog { width: 100%; }
+    .sl-rewrite-dialog > header { padding: 17px 16px 14px; }
+    .sl-rewrite-dialog > p { margin: 15px 16px 14px; }
+    .sl-rewrite-dialog > label { margin-left: 16px; margin-right: 16px; }
+    .sl-rewrite-dialog > textarea { width: calc(100% - 32px); margin-left: 16px; margin-right: 16px; }
+    .sl-rewrite-hint { margin-left: 16px; margin-right: 16px; }
+    .sl-rewrite-dialog > footer { flex-wrap: wrap; padding: 12px 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

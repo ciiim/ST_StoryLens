@@ -13,6 +13,10 @@ async function handleAssistantMessage() {
     try {
         const result = await analyzeLatestReply();
         if (sequence !== analysisSequence || !result) return;
+        if (result.addedItems?.length) {
+            const names = result.addedItems.map(item => `${item.type === 'scene' ? '场景' : '角色动态'}“${item.name}”`).join('、');
+            window.toastr?.success?.(`已自动补充${names}，生图提示词已加入素材库`);
+        }
         await refreshRuntime(result);
     } catch (error) {
         console.error(`[${MODULE_NAME}] 实时分析失败`, error);

@@ -3,6 +3,7 @@ export const MODULE_NAME = 'story_lens';
 const defaults = Object.freeze({
     enabled: true,
     autoAnalyze: true,
+    autoExpandLibrary: true,
     showRuntimeRail: true,
     sceneCount: 8,
     stateCount: 12,

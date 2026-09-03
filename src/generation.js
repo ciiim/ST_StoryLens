@@ -119,7 +119,7 @@ export async function generateAssetLibrary({ sceneCount, stateCount, selectedWor
     return library;
 }
 
-export async function regenerateItemPrompt(item, type, selectedWorldBooks) {
+export async function rewriteItemPrompt(item, type, selectedWorldBooks, direction = '') {
     const source = await collectStorySource(selectedWorldBooks);
     const schema = {
         name: 'StoryLensSinglePrompt',
@@ -134,10 +134,63 @@ export async function regenerateItemPrompt(item, type, selectedWorldBooks) {
         },
     };
     return await callModel({
-        systemPrompt: '你是文生图提示词专家。只输出符合 JSON Schema 的 JSON。',
-        prompt: `依据设定重新编写一个${type === 'scene' ? '剧情场景' : '角色形象动态'}提示词。保留原意但提升可生成性。\n原条目：${JSON.stringify(item)}\n设定：${source.serialized}`,
+        systemPrompt: '你是文生图提示词专家。严格遵守角色与世界观事实，并优先落实用户给出的重写倾向。只输出符合 JSON Schema 的 JSON。',
+        prompt: `重写当前选中的${type === 'scene' ? '剧情场景' : '角色形象动态'}栏位。可以调整名称、用途说明、分类、标签和生图提示词，但不得改变设定中的核心事实。\n\n用户的重写倾向：\n${String(direction).trim() || '没有额外倾向，请在保留原意的基础上提升画面表现力和可生成性。'}\n\n当前栏位：\n${JSON.stringify(item)}\n\n角色与故事书设定：\n${source.serialized}`,
         jsonSchema: schema,
     });
+}
+
+function missingSuggestionSchema() {
+    return {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+            name: { type: 'string' },
+            description: { type: 'string' },
+            category: { type: 'string' },
+            tags: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['name', 'description', 'category', 'tags'],
+    };
+}
+
+async function generateMissingItem({ type, suggestion, message, library, source }) {
+    const isScene = type === 'scene';
+    const schema = {
+        name: 'StoryLensMissingItem',
+        strict: true,
+        value: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+                name: { type: 'string' },
+                description: { type: 'string' },
+                prompt: { type: 'string' },
+                tags: { type: 'array', items: { type: 'string' } },
+                category: isScene
+                    ? { type: 'string', enum: ['日常', '非日常'] }
+                    : { type: 'string', enum: ['默认', '服装', '表情', '动作', '受伤或特殊'] },
+            },
+            required: ['name', 'description', 'prompt', 'tags', 'category'],
+        },
+    };
+    const existing = (isScene ? library.scenes : library.characterStates).map(({ name, description, prompt, tags, category }) => ({
+        name,
+        description,
+        prompt: String(prompt || '').slice(0, 1200),
+        tags,
+        category,
+    }));
+    const result = await callModel({
+        systemPrompt: '你是影视概念设计与文生图提示词专家。严格依据角色卡、故事书和最新剧情生成一个真正缺失的素材条目。不得改写角色身份或世界观事实，不得与现有条目重复。只输出符合 JSON Schema 的 JSON。',
+        prompt: `为素材库补充一个${isScene ? '剧情场景' : '角色形象动态'}。\n\n最新角色回复：\n${message.slice(0, 12000)}\n\n连续性分析给出的建议：\n${JSON.stringify(suggestion)}\n\n同类现有素材（不得生成近义重复项）：\n${JSON.stringify(existing)}\n\n角色与故事书设定：\n${source.serialized}\n\n${isScene ? '场景提示词应完整描述地点、时间、天气、光线、镜头和氛围，不要安排主体人物。' : '角色动态提示词应保持核心外貌与身材一致，并完整描述服装、表情、动作和适合立绘或半身像的构图。'}提示词使用详细中文，可独立交给主流文生图模型。`,
+        jsonSchema: schema,
+    });
+    return normalizeItems([result], isScene ? 'scene' : 'state')[0];
+}
+
+function sameName(left, right) {
+    return String(left || '').trim().toLocaleLowerCase() === String(right || '').trim().toLocaleLowerCase();
 }
 
 export async function analyzeLatestReply() {
@@ -145,8 +198,8 @@ export async function analyzeLatestReply() {
     const message = latestAssistantText();
     if (!message || (!library.scenes.length && !library.characterStates.length)) return null;
     const candidates = {
-        scenes: library.scenes.map(({ id, name, description, tags, category, image }) => ({ id, name, description, tags, category, hasImage: Boolean(image) })),
-        characterStates: library.characterStates.map(({ id, name, description, tags, category, image }) => ({ id, name, description, tags, category, hasImage: Boolean(image) })),
+        scenes: library.scenes.map(({ id, name, description, prompt, tags, category, image }) => ({ id, name, description, prompt: String(prompt || '').slice(0, 1200), tags, category, hasImage: Boolean(image) })),
+        characterStates: library.characterStates.map(({ id, name, description, prompt, tags, category, image }) => ({ id, name, description, prompt: String(prompt || '').slice(0, 1200), tags, category, hasImage: Boolean(image) })),
     };
     const schema = {
         name: 'StoryLensRuntimeMatch',
@@ -158,17 +211,46 @@ export async function analyzeLatestReply() {
                 characterStateId: { type: ['string', 'null'] },
                 confidence: { type: 'number' },
                 reason: { type: 'string' },
+                newSceneNeeded: { type: 'boolean' },
+                newScene: missingSuggestionSchema(),
+                newCharacterStateNeeded: { type: 'boolean' },
+                newCharacterState: missingSuggestionSchema(),
             },
-            required: ['sceneId', 'characterStateId', 'confidence', 'reason'],
+            required: ['sceneId', 'characterStateId', 'confidence', 'reason', 'newSceneNeeded', 'newScene', 'newCharacterStateNeeded', 'newCharacterState'],
         },
     };
     const result = await callModel({
-        systemPrompt: '你是剧情镜头连续性分析器。只从候选列表中选择最贴合最新回复的场景和角色动态。若没有合理候选则返回 null。不要因为图片未上传而改变语义判断。只输出 JSON。',
-        prompt: `最新角色回复：\n${message.slice(0, 12000)}\n\n候选素材：\n${JSON.stringify(candidates)}`,
+        systemPrompt: '你是剧情镜头连续性分析器。优先复用候选素材；只有最新回复中的场景或角色形象动态与所有候选都存在明显语义差异时，才要求新增。近义表达、轻微姿势或光线变化不得新增。不要因为图片未上传而改变语义判断。每类最多新增一个。只输出 JSON。',
+        prompt: `最新角色回复：\n${message.slice(0, 12000)}\n\n候选素材：\n${JSON.stringify(candidates)}\n\n分别判断场景与角色动态。能合理匹配时填写现有 id，并将对应 new*Needed 设为 false；确实没有合理候选时将 id 设为 null、new*Needed 设为 true，并在对应 new* 对象中给出简短名称、用途说明、分类和标签。不需要新增的 new* 对象仍须返回，内容使用空字符串和空数组。`,
         jsonSchema: schema,
     });
-    const scene = library.scenes.find(item => item.id === result.sceneId) ?? null;
-    const state = library.characterStates.find(item => item.id === result.characterStateId) ?? null;
+    let scene = library.scenes.find(item => item.id === result.sceneId) ?? null;
+    let state = library.characterStates.find(item => item.id === result.characterStateId) ?? null;
+    const addedItems = [];
+    const additions = [];
+    if (settings.autoExpandLibrary && !scene && result.newSceneNeeded && String(result.newScene?.name || '').trim()) {
+        additions.push({ type: 'scene', suggestion: result.newScene });
+    }
+    if (settings.autoExpandLibrary && !state && result.newCharacterStateNeeded && String(result.newCharacterState?.name || '').trim()) {
+        additions.push({ type: 'state', suggestion: result.newCharacterState });
+    }
+    if (additions.length) {
+        const source = await collectStorySource(settings.selectedWorldBooks);
+        const generated = await Promise.all(additions.map(addition => generateMissingItem({ ...addition, message, library, source })));
+        generated.forEach((item, index) => {
+            const type = additions[index].type;
+            const items = type === 'scene' ? library.scenes : library.characterStates;
+            const duplicate = items.find(existing => sameName(existing.name, item.name));
+            const resolved = duplicate ?? item;
+            if (!duplicate) {
+                items.push(item);
+                addedItems.push({ type, id: item.id, name: item.name });
+            }
+            if (type === 'scene') scene = resolved;
+            else state = resolved;
+        });
+        if (addedItems.length) await saveLibrary(library);
+    }
     const runtime = {
         sceneId: settings.lockScene ? undefined : scene?.id ?? null,
         stateId: settings.lockState ? undefined : state?.id ?? null,
@@ -183,5 +265,5 @@ export async function analyzeLatestReply() {
         ...Object.fromEntries(Object.entries(runtime).filter(([, value]) => value !== undefined)),
     };
     context.saveMetadataDebounced?.();
-    return context.chatMetadata.story_lens_runtime;
+    return { ...context.chatMetadata.story_lens_runtime, addedItems };
 }
